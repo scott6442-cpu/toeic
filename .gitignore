@@ -1,0 +1,24 @@
+# OneDrive / Windows
+.~lock*
+Thumbs.db
+desktop.ini
+~$*
+
+# macOS
+.DS_Store
+
+# Temp / Logs
+*.tmp
+*.log
+*.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Node (if added later)
+node_modules/
+
+# Claude Code local settings
+.claude/settings.local.json

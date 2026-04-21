@@ -407,6 +407,33 @@
       letter-spacing: 2px;
       margin-bottom: 8px;
       text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .speaker-btn.example-speaker {
+      width: 26px;
+      height: 26px;
+      font-size: 12px;
+      margin-left: 2px;
+    }
+
+    /* ===== Review banner ===== */
+    .review-banner {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 5px 14px;
+      background: linear-gradient(135deg, #C8B6E2, #A78BFA);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      border-radius: var(--r-pill);
+      box-shadow: 0 4px 12px rgba(167, 139, 250, 0.4);
+      z-index: 2;
+      white-space: nowrap;
     }
 
     /* ===== Speaker button ===== */
@@ -1973,6 +2000,7 @@
       <div class="card-wrap">
         <div class="card" id="card" onclick="toggleFlip()">
           <div class="card-face card-front">
+            <div class="review-banner" id="reviewBanner" style="display:none;"></div>
             <div class="emoji-row" id="emojiRow">📚</div>
             <div class="word-text" id="wordText">Loading...</div>
             <div class="pos-badge" id="posBadge">명사</div>
@@ -1982,7 +2010,7 @@
             <div class="back-word" id="backWord"></div>
             <div class="back-meaning" id="backMeaning"></div>
             <div class="divider"></div>
-            <div class="example-label">📝 EXAMPLE</div>
+            <div class="example-label" id="exampleLabel">📝 EXAMPLE</div>
             <div class="scene-illust" id="sceneIllust"></div>
             <div class="example-en" id="exampleEn"></div>
             <div class="example-kr" id="exampleKr"></div>
@@ -2080,6 +2108,13 @@
     let currentDay = 1;
     let currentIndex = 0;
 
+    // Review mode (kicks in when day's words all seen and some marked "다시 볼게요")
+    let reviewMode = false;
+    let reviewQueue = []; // shuffled array of word objects to re-show
+
+    // Current example sentence (for speaker button)
+    let currentExampleSentence = "";
+
     // Merge meanings overlay + build fast lookup by lowercase word
     const WORD_LOOKUP = {};
     (function initWordData() {
@@ -2148,6 +2183,8 @@
       if (day < 1 || day > TOTAL_DAYS) return;
       currentDay = day;
       currentIndex = 0;
+      reviewMode = false;
+      reviewQueue = [];
       document.getElementById("card").classList.remove("flipped");
       renderDayTabs();
       renderCard();
@@ -2257,10 +2294,31 @@
 
     // ===== Render Card =====
     function renderCard() {
-      const list = wordsOfDay(currentDay);
-      if (list.length === 0) return;
-      if (currentIndex >= list.length) currentIndex = list.length - 1;
-      const w = list[currentIndex];
+      let w, totalCount, posLabel;
+
+      if (reviewMode) {
+        if (reviewQueue.length === 0) {
+          // Queue emptied — exit review mode
+          reviewMode = false;
+          currentIndex = 0;
+          showDayCompleteBanner();
+          return;
+        }
+        if (currentIndex >= reviewQueue.length) currentIndex = 0;
+        w = reviewQueue[currentIndex];
+        totalCount = reviewQueue.length;
+        posLabel = `🔁 복습 ${currentIndex + 1} / ${totalCount}`;
+      } else {
+        const list = wordsOfDay(currentDay);
+        if (list.length === 0) return;
+        if (currentIndex >= list.length) currentIndex = list.length - 1;
+        w = list[currentIndex];
+        totalCount = list.length;
+        posLabel = null;
+      }
+
+      // Store current example for the speaker button
+      currentExampleSentence = w.exampleSentence;
 
       document.getElementById("emojiRow").textContent = w.situationEmoji;
       document.getElementById("wordText").innerHTML =
@@ -2272,11 +2330,48 @@
       document.getElementById("backMeaning").innerHTML = renderMeaningsList(w.meanings);
       document.getElementById("sceneIllust").innerHTML =
         `<div class="scene-emoji">${w.situationEmoji}</div>`;
+
+      // Example label with speaker button for the whole sentence
+      const exLabelEl = document.getElementById("exampleLabel");
+      if (exLabelEl) {
+        exLabelEl.innerHTML = `📝 EXAMPLE <button class="speaker-btn example-speaker" onclick="event.stopPropagation();speakCurrentExample()" title="예문 읽기">🔊</button>`;
+      }
       document.getElementById("exampleEn").innerHTML = renderClickableExample(w.exampleSentence);
       document.getElementById("exampleKr").textContent = w.exampleTranslation;
 
-      document.getElementById("prevBtn").disabled = currentIndex === 0;
-      document.getElementById("nextBtn").disabled = currentIndex === list.length - 1;
+      // Review mode banner on card front
+      const reviewBanner = document.getElementById("reviewBanner");
+      if (reviewBanner) {
+        if (reviewMode) {
+          reviewBanner.style.display = "block";
+          reviewBanner.textContent = posLabel;
+        } else {
+          reviewBanner.style.display = "none";
+        }
+      }
+
+      // Prev/Next buttons
+      if (reviewMode) {
+        document.getElementById("prevBtn").disabled = true;
+        document.getElementById("nextBtn").disabled = true;
+      } else {
+        document.getElementById("prevBtn").disabled = currentIndex === 0;
+        document.getElementById("nextBtn").disabled = currentIndex === totalCount - 1;
+      }
+    }
+
+    function speakCurrentExample() {
+      if (currentExampleSentence) speakWord(currentExampleSentence);
+    }
+
+    function showDayCompleteBanner() {
+      // Re-render in normal mode and show celebration
+      document.getElementById("card").classList.remove("flipped");
+      renderCard();
+      // Briefly show an alert-like message
+      setTimeout(() => {
+        alert(`🎉 Day ${currentDay}의 모든 단어를 완벽하게 외웠어요!`);
+      }, 100);
     }
 
     // ===== Render Progress Bar =====
@@ -2289,13 +2384,13 @@
       document.getElementById("progressText").textContent = `${done} / ${total} 외움`;
       document.getElementById("percentText").textContent = pct + "%";
 
-      // Test button enabled only when day fully completed
+      // Test button — always enabled; shows current progress as hint
       const btnTest = document.getElementById("btnStartTest");
       if (btnTest) {
-        btnTest.disabled = done < total;
+        btnTest.disabled = false;
         btnTest.textContent = done < total
-          ? `📝 이 Day 테스트 (${done}/${total})`
-          : "📝 이 Day 테스트 보기";
+          ? `📝 이 Day 테스트 보기 (${done}/${total} 외움)`
+          : "📝 이 Day 테스트 보기 ✨";
       }
     }
 
@@ -2306,6 +2401,7 @@
     }
 
     function navigate(delta) {
+      if (reviewMode) return; // In review mode, user must mark each card
       const list = wordsOfDay(currentDay);
       const next = currentIndex + delta;
       if (next < 0 || next >= list.length) return;
@@ -2315,21 +2411,85 @@
     }
 
     function markWord(known) {
-      const list = wordsOfDay(currentDay);
-      const w = list[currentIndex];
+      let w;
+      if (reviewMode) {
+        w = reviewQueue[currentIndex];
+      } else {
+        const list = wordsOfDay(currentDay);
+        w = list[currentIndex];
+      }
       if (!w) return;
+
       progress[w.word] = known;
       saveProgress();
       renderProgress();
       renderDayTabs();
-      // 자동으로 다음 카드로 이동
-      if (currentIndex < list.length - 1) {
-        setTimeout(() => {
-          document.getElementById("card").classList.remove("flipped");
-          currentIndex++;
-          renderCard();
-        }, 250);
-      }
+
+      setTimeout(() => {
+        document.getElementById("card").classList.remove("flipped");
+
+        if (reviewMode) {
+          if (known) {
+            // Remove from queue
+            reviewQueue.splice(currentIndex, 1);
+            if (reviewQueue.length === 0) {
+              reviewMode = false;
+              currentIndex = 0;
+              showDayCompleteBanner();
+              return;
+            }
+            // Adjust index
+            if (currentIndex >= reviewQueue.length) currentIndex = 0;
+            renderCard();
+          } else {
+            // Keep in queue — shuffle and show next
+            if (reviewQueue.length === 1) {
+              // Only one item; stay on it
+              renderCard();
+            } else {
+              // Remove current, reshuffle rest, put current at the end
+              const current = reviewQueue.splice(currentIndex, 1)[0];
+              reviewQueue = shuffle(reviewQueue);
+              reviewQueue.push(current);
+              currentIndex = 0;
+              renderCard();
+            }
+          }
+        } else {
+          // Normal mode
+          const list = wordsOfDay(currentDay);
+          if (currentIndex < list.length - 1) {
+            currentIndex++;
+            renderCard();
+          } else {
+            // At last card — check if review mode should kick in
+            const toReview = list.filter(x => progress[x.word] === false);
+            if (toReview.length > 0) {
+              reviewMode = true;
+              reviewQueue = shuffle(toReview);
+              currentIndex = 0;
+              renderCard();
+              // Subtle toast via progress text
+              const pt = document.getElementById("progressText");
+              if (pt) {
+                const orig = pt.textContent;
+                pt.textContent = `🔁 복습 모드 시작 — ${toReview.length}개 단어 재출제`;
+                pt.style.color = "#8B5CF6";
+                setTimeout(() => {
+                  pt.style.color = "";
+                  renderProgress();
+                }, 2500);
+              }
+            } else {
+              // Day complete — no words to review
+              const done = dayCompletedCount(currentDay);
+              if (done === list.length) {
+                showDayCompleteBanner();
+              }
+            }
+          }
+        }
+      }, 250);
     }
 
     function resetDay() {
@@ -2337,6 +2497,8 @@
       wordsOfDay(currentDay).forEach(w => delete progress[w.word]);
       saveProgress();
       currentIndex = 0;
+      reviewMode = false;
+      reviewQueue = [];
       document.getElementById("card").classList.remove("flipped");
       renderCard();
       renderProgress();
@@ -2420,10 +2582,7 @@
 
     function startWordTest(day) {
       const list = wordsOfDay(day);
-      if (dayCompletedCount(day) < list.length) {
-        alert("이 Day의 모든 단어를 먼저 학습해 주세요!");
-        return;
-      }
+      if (list.length === 0) return;
       const picked = shuffle(list).slice(0, WORD_TEST_SIZE);
       const questions = picked.map(w => buildWordQuestion(w, list));
 
@@ -3148,10 +3307,9 @@
         const done = dayCompletedCount(d);
         const ready = done >= list.length;
         html += `<button class="day-picker-card ${ready ? 'ready' : ''}"
-          ${ready ? '' : 'disabled'}
           onclick="startWordTest(${d})">
           <div class="dp-day">Day ${d}</div>
-          <div class="dp-status">${ready ? '✅ 테스트 준비 완료' : `${done}/${list.length} 학습`}</div>
+          <div class="dp-status">${ready ? '✅ 완료 · 테스트 가능' : `${done}/${list.length} 학습 · 테스트 가능`}</div>
         </button>`;
       }
       container.innerHTML = html;
