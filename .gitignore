@@ -20,5 +20,8 @@ desktop.ini
 # Node (if added later)
 node_modules/
 
+# 저작권 자료 (기출문제집 원본 PDF는 커밋/배포 금지)
+*.pdf
+
 # Claude Code local settings
 .claude/settings.local.json
